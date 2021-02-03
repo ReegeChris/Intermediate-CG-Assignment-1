@@ -47,7 +47,7 @@ int main() {
 	// Push another scope so most memory should be freed *before* we exit the app
 	{
 		#pragma region Shader and ImGui
-
+		
 		// Load our shaders
 		Shader::sptr shader = Shader::Create();
 		shader->LoadShaderPartFromFile("shaders/vertex_shader.glsl", GL_VERTEX_SHADER);
@@ -55,13 +55,20 @@ int main() {
 		shader->Link();
 
 		glm::vec3 lightPos = glm::vec3(0.0f, 0.0f, 2.0f);
-		glm::vec3 lightCol = glm::vec3(0.9f, 0.85f, 0.5f);
-		float     lightAmbientPow = 0.05f;
+		glm::vec3 lightCol = glm::vec3(1.0f, 0.85f, 0.5f);
+		float     lightAmbientPow = 1.0f;
 		float     lightSpecularPow = 1.0f;
 		glm::vec3 ambientCol = glm::vec3(1.0f);
 		float     ambientPow = 0.1f;
 		float     lightLinearFalloff = 0.09f;
 		float     lightQuadraticFalloff = 0.032f;
+		
+		//Bool variables that act as toggles for changing the lighting
+		bool ambientToggle = false;
+		bool specularToggle = false;
+		bool noLightingToggle = false;
+		bool ambient_And_Specular_Toggle = false;
+		bool custom_Shader_Toggle = false;
 
 		// These are our application / scene level uniforms that don't necessarily update
 		// every frame
@@ -74,9 +81,73 @@ int main() {
 		shader->SetUniform("u_LightAttenuationConstant", 1.0f);
 		shader->SetUniform("u_LightAttenuationLinear", lightLinearFalloff);
 		shader->SetUniform("u_LightAttenuationQuadratic", lightQuadraticFalloff);
-
+		
+		//set More uniform variables for lighting toggles
+		shader->SetUniform("u_AmbientToggle", (int)ambientToggle);
+		shader->SetUniform("u_SpecularToggle", (int)specularToggle);
+		shader->SetUniform("u_LightingOff", (int)noLightingToggle);
+		shader->SetUniform("u_AmbientAndSpecToggle", (int)ambient_And_Specular_Toggle);
+		shader->SetUniform("u_CustomShaderToggle", (int)custom_Shader_Toggle);
+		
 		// We'll add some ImGui controls to control our shader
 		BackendHandler::imGuiCallbacks.push_back([&]() {
+			
+			if (ImGui::Checkbox("No Lighting", &noLightingToggle))
+			{
+				noLightingToggle = true;
+				ambientToggle = false;
+				specularToggle = false;
+				ambient_And_Specular_Toggle = false;
+				custom_Shader_Toggle = false;
+			
+			}
+			
+			if (ImGui::Checkbox("Ambient", &ambientToggle))
+			{
+				noLightingToggle = false;
+				ambientToggle = true;
+				specularToggle = false;
+				ambient_And_Specular_Toggle = false;
+				custom_Shader_Toggle = false;
+		
+			}
+
+			if (ImGui::Checkbox("Specular", &specularToggle))
+			{
+				noLightingToggle = false;
+				ambientToggle = false;
+				specularToggle = true;
+				ambient_And_Specular_Toggle = false;
+				custom_Shader_Toggle = false;
+
+			}
+
+			if (ImGui::Checkbox("Ambient + Specular + Diffuse", &ambient_And_Specular_Toggle))
+			{
+				noLightingToggle = false;
+				ambientToggle = false;
+				specularToggle = false;
+				ambient_And_Specular_Toggle = true;
+				custom_Shader_Toggle = false;
+			}
+
+			if (ImGui::Checkbox("Ambient + Specular + Toon Shading", &custom_Shader_Toggle))
+			{
+				noLightingToggle = false;
+				ambientToggle = false;
+				specularToggle = false;
+				ambient_And_Specular_Toggle = false;
+				custom_Shader_Toggle = true;
+			}
+
+			//Re-set the unifrom variables in the shader after Imgui toggles
+			shader->SetUniform("u_AmbientToggle", (int)ambientToggle);
+			shader->SetUniform("u_SpecularToggle", (int)specularToggle);
+			shader->SetUniform("u_LightingOff", (int)noLightingToggle);
+			shader->SetUniform("u_AmbientAndSpecToggle", (int)ambient_And_Specular_Toggle);
+			shader->SetUniform("u_CustomShaderToggle", (int)custom_Shader_Toggle);
+
+
 			if (ImGui::CollapsingHeader("Scene Level Lighting Settings"))
 			{
 				if (ImGui::ColorPicker3("Ambient Color", glm::value_ptr(ambientCol))) {
@@ -108,10 +179,10 @@ int main() {
 				}
 			}
 
-			auto name = controllables[selectedVao].get<GameObjectTag>().Name;
-			ImGui::Text(name.c_str());
-			auto behaviour = BehaviourBinding::Get<SimpleMoveBehaviour>(controllables[selectedVao]);
-			ImGui::Checkbox("Relative Rotation", &behaviour->Relative);
+		//	auto name = controllables[selectedVao].get<GameObjectTag>().Name;
+		//	ImGui::Text(name.c_str());
+			/*auto behaviour = BehaviourBinding::Get<SimpleMoveBehaviour>(controllables[selectedVao]);
+			ImGui::Checkbox("Relative Rotation", &behaviour->Relative);*/
 
 			ImGui::Text("Q/E -> Yaw\nLeft/Right -> Roll\nUp/Down -> Pitch\nY -> Toggle Mode");
 		
@@ -127,6 +198,8 @@ int main() {
 			ImGui::Text("MIN: %f MAX: %f AVG: %f", minFps, maxFps, avgFps / 128.0f);
 			});
 
+		
+
 		#pragma endregion 
 
 		// GL states
@@ -141,6 +214,82 @@ int main() {
 		Texture2D::sptr diffuse2 = Texture2D::LoadFromFile("images/box.bmp");
 		Texture2D::sptr specular = Texture2D::LoadFromFile("images/Stone_001_Specular.png");
 		Texture2D::sptr reflectivity = Texture2D::LoadFromFile("images/box-reflections.bmp");
+		//Material Applied to plane
+		Texture2D::sptr metalDiffuse = Texture2D::LoadFromFile("images/Metal.jpg");
+		//Material applied to test tube
+		Texture2D::sptr goldDiffuse = Texture2D::LoadFromFile("images/Gold_3.jpg");
+
+#pragma region Box texture
+	
+		//Loaded in new textures
+		Texture2DData::sptr boxDiffuseMap = Texture2DData::LoadFromFile("images/BoxTexture.png");
+		//Create New texture to be applied to Box.obj
+		Texture2D::sptr boxDiffuse = Texture2D::Create();
+		boxDiffuse->LoadData(boxDiffuseMap);
+		//Create empty texture
+		Texture2DDescription boxDesc = Texture2DDescription();
+		boxDesc.Width = 1;
+		boxDesc.Height = 1;
+		boxDesc.Format = InternalFormat::RGB8;
+		Texture2D::sptr boxTexture = Texture2D::Create(boxDesc);
+
+
+#pragma endregion
+
+#pragma region Chicken texture
+		//Loaded in new textures
+		Texture2DData::sptr drumstickDiffuseMap = Texture2DData::LoadFromFile("images/Drumstick UV's.png");
+		Texture2DData::sptr drumstickSpecularMap = Texture2DData::LoadFromFile("images/Drumstick UV's.png");
+		//Create New texture to be applied to Chicken.obj
+		Texture2D::sptr drumstickDiffuse = Texture2D::Create();
+		drumstickDiffuse->LoadData(drumstickDiffuseMap);
+		Texture2D::sptr drumstickSpecular = Texture2D::Create();
+		drumstickSpecular->LoadData(drumstickSpecularMap);
+
+		//Create empty texture
+		Texture2DDescription drumStickDesc = Texture2DDescription();
+		drumStickDesc.Width = 1;
+		drumStickDesc.Height = 1;
+		drumStickDesc.Format = InternalFormat::RGB8;
+		Texture2D::sptr drumStickTexture = Texture2D::Create(drumStickDesc);
+
+
+#pragma endregion
+
+#pragma region Door Texture
+		//Loaded in new textures
+		Texture2DData::sptr doorDiffuseMap = Texture2DData::LoadFromFile("images/DoorTexture.png");
+		//Create New texture to be applied to Door.obj
+		Texture2D::sptr doorDiffuse = Texture2D::Create();
+		doorDiffuse->LoadData(doorDiffuseMap);
+		//Create empty texture
+		Texture2DDescription doorDesc = Texture2DDescription();
+		doorDesc.Width = 1;
+		doorDesc.Height = 1;
+		doorDesc.Format = InternalFormat::RGB8;
+		Texture2D::sptr doorTexture = Texture2D::Create(doorDesc);
+
+#pragma endregion
+
+#pragma region Robot Texture
+		
+		//Loaded in new textures
+		Texture2DData::sptr robotDiffuseMap = Texture2DData::LoadFromFile("images/Robot Texture_3.jpg");
+		Texture2DData::sptr robotSpecularMap = Texture2DData::LoadFromFile("images/Robot Texture_2.png");
+		//Create New texture to be applied to Gun_Bot.obj
+		Texture2D::sptr robotDiffuse = Texture2D::Create();
+		robotDiffuse->LoadData(robotDiffuseMap);
+		//Create empty texture
+		Texture2DDescription robotDesc = Texture2DDescription();
+		robotDesc.Width = 1;
+		robotDesc.Height = 1;
+		robotDesc.Format = InternalFormat::RGB8;
+		Texture2D::sptr robotTexture = Texture2D::Create(robotDesc);
+
+
+
+#pragma endregion
+
 
 		// Load the cube map
 		//TextureCubeMap::sptr environmentMap = TextureCubeMap::LoadFromImages("images/cubemaps/skybox/sample.jpg");
@@ -192,7 +341,7 @@ int main() {
 		reflective->LoadShaderPartFromFile("shaders/vertex_shader.glsl", GL_VERTEX_SHADER);
 		reflective->LoadShaderPartFromFile("shaders/frag_blinn_phong_reflection.glsl", GL_FRAGMENT_SHADER);
 		reflective->Link();
-		
+	
 		// 
 		ShaderMaterial::sptr material1 = ShaderMaterial::Create(); 
 		material1->Shader = reflective;
@@ -219,74 +368,267 @@ int main() {
 		reflectiveMat->Set("s_Environment", environmentMap);
 		reflectiveMat->Set("u_EnvironmentRotation", glm::mat3(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1, 0, 0))));
 
-		GameObject sceneObj = scene->CreateEntity("scene_geo"); 
+		//Create new mateirals that stores the texture for the box obj
+		ShaderMaterial::sptr material2 = ShaderMaterial::Create();
+		material2->Shader = shader;
+		material2->Set("s_Diffuse", boxDiffuse);
+		material2->Set("s_Specular", boxDiffuse);
+		material2->Set("u_Shininess", 8.0f);
+		material2->Set("u_TextureMix", 0.5f);
+
+		//Create new mateirals that stores the texture for the chicken obj
+		ShaderMaterial::sptr material3 = ShaderMaterial::Create();
+		material3->Shader = shader;
+		material3->Set("s_Diffuse", drumstickDiffuse);
+		material3->Set("s_Specular", drumstickSpecular);
+		material3->Set("u_Shininess", 10.0f);
+		material3->Set("u_TextureMix", 0.5f);
+
+		//Create new mateirals that stores the texture for the door obj
+		ShaderMaterial::sptr material4 = ShaderMaterial::Create();
+		material4->Shader = shader;
+		material4->Set("s_Diffuse", doorDiffuse);
+		material4->Set("s_Specular", doorDiffuse);
+		material4->Set("u_Shininess", 8.0f);
+		material4->Set("u_TextureMix", 0.5f);
+
+		//Create new mateirals that stores the texture for the box obj
+		ShaderMaterial::sptr material5 = ShaderMaterial::Create();
+		material5->Shader = shader;
+		material5->Set("s_Diffuse", metalDiffuse);
+		material5->Set("s_Specular", metalDiffuse);
+		material5->Set("u_Shininess", 8.0f);
+		material5->Set("u_TextureMix", 0.5f);
+
+		//Create new mateirals that stores the texture for the box obj
+		ShaderMaterial::sptr material6 = ShaderMaterial::Create();
+		material6->Shader = shader;
+		material6->Set("s_Diffuse", robotDiffuse);
+		material6->Set("s_Specular", robotDiffuse);
+		material6->Set("u_Shininess", 8.0f);
+		material6->Set("u_TextureMix", 0.5f);
+
+		//Create new mateirals that stores the texture for the box obj
+		ShaderMaterial::sptr material7 = ShaderMaterial::Create();
+		material7->Shader = shader;
+		material7->Set("s_Diffuse", goldDiffuse);
+		material7->Set("s_Specular", goldDiffuse);
+		material7->Set("u_Shininess", 8.0f);
+		material7->Set("u_TextureMix", 0.5f);
+		
+
+	/*	GameObject sceneObj = scene->CreateEntity("scene_geo"); 
 		{
 			VertexArrayObject::sptr sceneVao = NotObjLoader::LoadFromFile("Sample.notobj");
 			sceneObj.emplace<RendererComponent>().SetMesh(sceneVao).SetMaterial(material1);
 			sceneObj.get<Transform>().SetLocalPosition(0.0f, 0.0f, 0.0f);
-		}
+		}*/
 
-		GameObject obj2 = scene->CreateEntity("monkey_quads");
+		GameObject obj2 = scene->CreateEntity("Box");
 		{
-			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/monkey_quads.obj");
-			obj2.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material0);
-			obj2.get<Transform>().SetLocalPosition(0.0f, 0.0f, 1.0f);
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Box.obj");
+			obj2.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material2);
+			obj2.get<Transform>().SetLocalPosition(-4.0f, -0.5f, -0.4f);
+			obj2.get<Transform>().SetLocalScale(0.1f, 0.1f, 0.1f);
+			obj2.get<Transform>().SetLocalRotation(0.0f, 90.0f, 45.0f);
 			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj2);
 		}
 
-		GameObject obj3 = scene->CreateEntity("monkey_tris");
+		GameObject obj13 = scene->CreateEntity("Box");
 		{
-			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/monkey.obj");
-			obj3.emplace<RendererComponent>().SetMesh(vao).SetMaterial(reflectiveMat);
-			obj3.get<Transform>().SetLocalPosition(2.0f, 0.0f, 1.0f);
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Box.obj");
+			obj13.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material2);
+			obj13.get<Transform>().SetLocalPosition(-4.0f, -0.5f, 0.3f);
+			obj13.get<Transform>().SetLocalScale(0.1f, 0.1f, 0.1f);
+			obj13.get<Transform>().SetLocalRotation(0.0f, 90.0f, 45.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj2);
+		}
+
+		GameObject obj14 = scene->CreateEntity("Box");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Box.obj");
+			obj14.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material2);
+			obj14.get<Transform>().SetLocalPosition(-3.3f, -1.0f, -0.4f);
+			obj14.get<Transform>().SetLocalScale(0.1f, 0.1f, 0.1f);
+			obj14.get<Transform>().SetLocalRotation(0.0f, 90.0f, 0.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj14);
+		}
+
+		GameObject obj15 = scene->CreateEntity("Box");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Box.obj");
+			obj15.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material2);
+			obj15.get<Transform>().SetLocalPosition(-3.3f, -1.0f, 0.3f);
+			obj15.get<Transform>().SetLocalScale(0.1f, 0.1f, 0.1f);
+			obj15.get<Transform>().SetLocalRotation(0.0f, 90.0f, 0.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj14);
+		}
+
+		
+		GameObject obj3 = scene->CreateEntity("Test Tube");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/TestTube.obj");
+			obj3.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material7);
+			obj3.get<Transform>().SetLocalPosition(4.0f, -2.5f, -0.8f);
+			obj3.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj3.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
 			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj3);
 		}
 
-
-		GameObject obj5 = scene->CreateEntity("cube");
+		GameObject obj4 = scene->CreateEntity("Chicken Model");
 		{
-			MeshBuilder<VertexPosNormTexCol> builder = MeshBuilder<VertexPosNormTexCol>();
-			MeshFactory::AddCube(builder, glm::vec3(0.0f), glm::vec3(1.0f), glm::vec3(0.0f));
-			VertexArrayObject::sptr vao = builder.Bake();
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Drumstick Walk Frame 1.obj");
+			obj4.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material3);
+			obj4.get<Transform>().SetLocalPosition(1.3f, 1.0f, -0.8f);
+			obj4.get<Transform>().SetLocalScale(0.2f, 0.2f, 0.2f);
+			obj4.get<Transform>().SetLocalRotation(90.0f, 0.0f, 0.0f);
 			
-			obj5.emplace<RendererComponent>().SetMesh(vao).SetMaterial(reflectiveMat);
-			obj5.get<Transform>().SetLocalPosition(-4.0f, 0.0f, 2.0f);
-			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj5);
-		}
-
-		GameObject obj4 = scene->CreateEntity("moving_box");
-		{
-			// Build a mesh
-			MeshBuilder<VertexPosNormTexCol> builder = MeshBuilder<VertexPosNormTexCol>();
-			MeshFactory::AddCube(builder, glm::vec3(0.0f), glm::vec3(1.0f), glm::vec3(0.0f), glm::vec4(1.0f, 0.5f, 0.5f, 1.0f));
-			VertexArrayObject::sptr vao = builder.Bake();
-			
-			obj4.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material0);
-			obj4.get<Transform>().SetLocalPosition(-2.0f, 0.0f, 1.0f);
-
 			// Bind returns a smart pointer to the behaviour that was added
 			auto pathing = BehaviourBinding::Bind<FollowPathBehaviour>(obj4);
 			// Set up a path for the object to follow
-			pathing->Points.push_back({ -4.0f, -4.0f, 0.0f });
-			pathing->Points.push_back({ 4.0f, -4.0f, 0.0f });
-			pathing->Points.push_back({ 4.0f,  4.0f, 0.0f });
-			pathing->Points.push_back({ -4.0f,  4.0f, 0.0f });
-			pathing->Speed = 2.0f;
+			pathing->Points.push_back({ 1.3f, -2.0f, -0.8f });
+			pathing->Points.push_back({ -1.3f, -2.0f, -0.8f });
+			pathing->Points.push_back({ -1.3f, 2.0f, -0.8f });
+			pathing->Points.push_back({ 1.3f, 2.0f, -0.8f });
+			pathing->Speed = 3.0f;
+		}
+		
+		GameObject obj5 = scene->CreateEntity("Door Model");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Door-FIXED.obj");
+			obj5.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material4);
+			obj5.get<Transform>().SetLocalPosition(1.5f, -4.5f, 2.5f);
+			obj5.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj5.get<Transform>().SetLocalRotation(0.0f, 90.0f, 90.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj5);
 		}
 
-		GameObject obj6 = scene->CreateEntity("following_monkey");
+		GameObject obj6 = scene->CreateEntity("Plane");
 		{
-			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/monkey.obj");
-			obj6.emplace<RendererComponent>().SetMesh(vao).SetMaterial(reflectiveMat);
-			obj6.get<Transform>().SetLocalPosition(0.0f, 0.0f, 3.0f);
-			obj6.get<Transform>().SetParent(obj4);
-			
-			auto pathing = BehaviourBinding::Bind<FollowPathBehaviour>(obj6);
-			// Set up a path for the object to follow
-			pathing->Points.push_back({ 0.0f, 0.0f, 1.0f });
-			pathing->Points.push_back({ 0.0f, 0.0f, 3.0f });
-			pathing->Speed = 2.0f;
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Simple Plane.obj");
+			obj6.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material5);
+			obj6.get<Transform>().SetLocalPosition(0.0f, 0.0f, 0.0f);
+			obj6.get<Transform>().SetLocalScale(0.9f, 0.9f, 0.9f);
+			obj6.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj6);
 		}
+
+		GameObject obj8 = scene->CreateEntity("Test Tube");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/TestTube.obj");
+			obj8.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material7);
+			obj8.get<Transform>().SetLocalPosition(4.0f, 1.0f, -0.8f);
+			obj8.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj8.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj8);
+		}
+
+		GameObject obj9 = scene->CreateEntity("Test Tube");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/TestTube.obj");
+			obj9.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material7);
+			obj9.get<Transform>().SetLocalPosition(4.0f, 4.0f, -0.8f);
+			obj9.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj9.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj9);
+		}
+
+		GameObject obj10 = scene->CreateEntity("Test Tube");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/TestTube.obj");
+			obj10.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material7);
+			obj10.get<Transform>().SetLocalPosition(-4.0f, -2.5f, -0.8f);
+			obj10.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj10.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj10);
+		}
+
+		GameObject obj11 = scene->CreateEntity("Test Tube");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/TestTube.obj");
+			obj11.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material7);
+			obj11.get<Transform>().SetLocalPosition(-4.0f, 1.0f, -0.8f);
+			obj11.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj11.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj11);
+		}
+
+		GameObject obj12 = scene->CreateEntity("Test Tube");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/TestTube.obj");
+			obj12.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material7);
+			obj12.get<Transform>().SetLocalPosition(-4.0f, 4.0f, -0.8f);
+			obj12.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj12.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj12);
+		}
+
+		GameObject obj16 = scene->CreateEntity("Robot");
+		{
+			VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/Gun_Bot.obj");
+			obj16.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material6);
+			obj16.get<Transform>().SetLocalPosition(1.3f, 3.0f, 0.0f);
+			obj16.get<Transform>().SetLocalScale(0.5f, 0.5f, 0.5f);
+			obj16.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			//obj16.get<Transform>().SetParent(obj4);
+	
+
+			// Bind returns a smart pointer to the behaviour that was added
+			auto pathing = BehaviourBinding::Bind<FollowPathBehaviour>(obj16);
+			// Set up a path for the object to follow
+			pathing->Points.push_back({ 1.3f, -2.0f, -0.8f });
+			pathing->Points.push_back({ -1.3f, -2.0f, -0.8f });
+			pathing->Points.push_back({ -1.3f, 2.0f, -0.8f });
+			pathing->Points.push_back({ 1.3f, 2.0f, -0.8f });
+			pathing->Speed = 3.0f;
+
+			
+		}
+
+		//GameObject obj5 = scene->CreateEntity("cube");
+		//{
+		//	MeshBuilder<VertexPosNormTexCol> builder = MeshBuilder<VertexPosNormTexCol>();
+		//	MeshFactory::AddCube(builder, glm::vec3(0.0f), glm::vec3(1.0f), glm::vec3(0.0f));
+		//	VertexArrayObject::sptr vao = builder.Bake();
+		//	
+		//	obj5.emplace<RendererComponent>().SetMesh(vao).SetMaterial(reflectiveMat);
+		//	obj5.get<Transform>().SetLocalPosition(-4.0f, 0.0f, 2.0f);
+		//	BehaviourBinding::BindDisabled<SimpleMoveBehaviour>(obj5);
+		//}
+
+		//GameObject obj4 = scene->CreateEntity("moving_box");
+		//{
+		//	// Build a mesh
+		//	MeshBuilder<VertexPosNormTexCol> builder = MeshBuilder<VertexPosNormTexCol>();
+		//	MeshFactory::AddCube(builder, glm::vec3(0.0f), glm::vec3(1.0f), glm::vec3(0.0f), glm::vec4(1.0f, 0.5f, 0.5f, 1.0f));
+		//	VertexArrayObject::sptr vao = builder.Bake();
+		//	
+		//	obj4.emplace<RendererComponent>().SetMesh(vao).SetMaterial(material0);
+		//	obj4.get<Transform>().SetLocalPosition(-2.0f, 0.0f, 1.0f);
+
+		//	// Bind returns a smart pointer to the behaviour that was added
+		//	auto pathing = BehaviourBinding::Bind<FollowPathBehaviour>(obj4);
+		//	// Set up a path for the object to follow
+		//	pathing->Points.push_back({ -4.0f, -4.0f, 0.0f });
+		//	pathing->Points.push_back({ 4.0f, -4.0f, 0.0f });
+		//	pathing->Points.push_back({ 4.0f,  4.0f, 0.0f });
+		//	pathing->Points.push_back({ -4.0f,  4.0f, 0.0f });
+		//	pathing->Speed = 2.0f;
+		//}
+
+		//GameObject obj6 = scene->CreateEntity("following_monkey");
+		//{
+		//	VertexArrayObject::sptr vao = ObjLoader::LoadFromFile("models/monkey.obj");
+		//	obj6.emplace<RendererComponent>().SetMesh(vao).SetMaterial(reflectiveMat);
+		//	obj6.get<Transform>().SetLocalPosition(0.0f, 0.0f, 3.0f);
+		//	obj6.get<Transform>().SetParent(obj4);
+		//	
+		//	auto pathing = BehaviourBinding::Bind<FollowPathBehaviour>(obj6);
+		//	// Set up a path for the object to follow
+		//	pathing->Points.push_back({ 0.0f, 0.0f, 1.0f });
+		//	pathing->Points.push_back({ 0.0f, 0.0f, 3.0f });
+		//	pathing->Speed = 2.0f;
+		//}
 		
 		// Create an object to be our camera
 		GameObject cameraObject = scene->CreateEntity("Camera");
@@ -341,8 +683,8 @@ int main() {
 			// use std::bind
 			keyToggles.emplace_back(GLFW_KEY_T, [&]() { cameraObject.get<Camera>().ToggleOrtho(); });
 
-			controllables.push_back(obj2);
-			controllables.push_back(obj3);
+			//controllables.push_back(obj2);
+			//controllables.push_back(obj3);
 
 			keyToggles.emplace_back(GLFW_KEY_KP_ADD, [&]() {
 				BehaviourBinding::Get<SimpleMoveBehaviour>(controllables[selectedVao])->Enabled = false;
@@ -384,6 +726,56 @@ int main() {
 			frameIx++;
 			if (frameIx >= 128)
 				frameIx = 0;
+
+
+			//Change the Chicken Rotation when he reaches reach a certain point
+			if (obj4.get<Transform>().GetLocalPosition().y <= -1.90)
+			{
+				obj4.get<Transform>().SetLocalRotation(90.0f, 0.0f, 270.0f);
+
+			}
+
+			if (obj4.get<Transform>().GetLocalPosition().x <= -1.2)
+			{
+				obj4.get<Transform>().SetLocalRotation(90.0f, 0.0f, 180.0f);
+			}
+
+			if (obj4.get<Transform>().GetLocalPosition().y >= 1.90)
+			{
+				obj4.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+
+			}
+
+			if (obj4.get<Transform>().GetLocalPosition().x >= 1.2)
+			{
+				obj4.get<Transform>().SetLocalRotation(90.0f, 0.0f, 0.0f);
+			}
+
+
+			//Change the Robot's Rotation when it reaches a certain point
+			if (obj16.get<Transform>().GetLocalPosition().y <= -1.90)
+			{
+				obj16.get<Transform>().SetLocalRotation(90.0f, 0.0f, 0.0f);
+
+			}
+
+			if (obj16.get<Transform>().GetLocalPosition().x <= -1.2)
+			{
+				obj16.get<Transform>().SetLocalRotation(90.0f, 0.0f, 270.0f);
+			}
+
+			if (obj16.get<Transform>().GetLocalPosition().y >= 1.90)
+			{
+				obj16.get<Transform>().SetLocalRotation(90.0f, 0.0f, 180.0f);
+
+			}
+
+			if (obj16.get<Transform>().GetLocalPosition().x >= 1.2)
+			{
+				obj16.get<Transform>().SetLocalRotation(90.0f, 0.0f, 90.0f);
+			}
+
+
 
 			// We'll make sure our UI isn't focused before we start handling input for our game
 			if (!ImGui::IsAnyWindowFocused()) {
